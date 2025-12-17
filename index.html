@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8" />
+    <title>Portfolio Manager Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0b0c10; color: #f5f5f5; }
+        header { background: #111827; padding: 18px 25px; border-bottom: 1px solid #1f2933; display: flex; justify-content: space-between; align-items: center; }
+        header h1 { font-size: 22px; letter-spacing: 1px; }
+        header .info { font-size: 12px; color: #9ca3af; }
+        
+        .container { display: flex; height: calc(100vh - 60px); }
+        
+        /* SIDEBAR */
+        .sidebar { width: 340px; padding: 20px; background: #111827; border-right: 1px solid #1f2933; overflow-y: auto; }
+        .sidebar h2 { font-size: 16px; margin-bottom: 16px; margin-top: 0; }
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; font-size: 12px; color: #d1d5db; margin-bottom: 4px; font-weight: 500; }
+        .form-group input, .form-group select { width: 100%; padding: 8px 10px; background: #020617; border: 1px solid #1f2933; border-radius: 5px; color: #f5f5f5; font-size: 13px; transition: border-color 0.2s; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #2563eb; }
+        .helper-text { font-size: 11px; color: #6b7280; margin-top: 2px; font-style: italic; }
+
+        #runBtn { width: 100%; padding: 10px; margin-top: 18px; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); border: none; border-radius: 5px; color: white; font-weight: 600; font-size: 14px; cursor: pointer; transition: background 0.3s; }
+        #runBtn:hover:not(:disabled) { background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%); }
+        #runBtn:disabled { background: #4b5563; cursor: not-allowed; opacity: 0.7; }
+        
+        .status { margin-top: 12px; padding: 10px; border-radius: 5px; font-size: 12px; display: none; }
+        .status.error { background: #7f1d1d; color: #fee2e2; display: block; }
+        .status.success { background: #14532d; color: #bbf7d0; display: block; }
+
+        /* MAIN CONTENT */
+        .main { flex: 1; padding: 20px; overflow-y: auto; background: #0b0c10; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+        
+        /* STYLE SUPPLEMENTAIRE POUR LA GRILLE 4 COLONNES (SECTION RISQUE) */
+        .risk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+
+        .card { background: #020617; border-radius: 6px; padding: 16px; border: 1px solid #1f2933; }
+        .card-title { font-size: 12px; color: #9ca3af; margin-bottom: 6px; font-weight: 500; }
+        .card-value { font-size: 18px; font-weight: 700; color: #2563eb; }
+
+        .section { margin-top: 24px; background: #020617; border-radius: 6px; border: 1px solid #1f2933; padding: 16px; }
+        .section-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #e5e7eb; }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #111827; padding: 8px; text-align: left; border-bottom: 1px solid #1f2933; font-weight: 600; color: #d1d5db; }
+        td { padding: 8px; border-bottom: 1px solid #1f2933; }
+        tr:hover { background: #0f1419; }
+
+        .chart-container { position: relative; height: 300px; margin-top: 12px; }
+        .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+
+        @media (max-width: 1200px) { 
+            .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } 
+            .risk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 768px) { 
+            .container { flex-direction: column; } 
+            .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #1f2933; }
+            .stats-grid, .grid-2, .risk-grid { grid-template-columns: 1fr; } 
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>PORTFOLIO ALLOCATION MANAGER</h1>
+    <div class="info">Backend Flask: http://localhost:5000/api/portfolio</div>
+</header>
+
+<div class="container">
+    <div class="sidebar">
+        <h2>Configuration</h2>
+
+        <div class="form-group">
+            <label for="tickers">Tickers (séparés par virgule)</label>
+            <input id="tickers" type="text" value="META,JPM,TSLA,MSFT,AAPL,AMGN" />
+        </div>
+
+        <div class="form-group">
+            <label for="period">Période historique</label>
+            <select id="period">
+                <option value="1y" selected>1 an</option>
+                <option value="2y">2 ans</option>
+                <option value="5y">5 ans</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="geo">Zone géographique (taux sans risque)</label>
+            <select id="geo">
+                <option value="USA" selected>USA</option>
+                <option value="France">France</option>
+                <option value="Allemagne">Allemagne</option>
+                <option value="UK">UK</option>
+                <option value="Zone Euro">Zone Euro</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="rf_manual">Taux sans risque manuel (%)</label>
+            <input id="rf_manual" type="number" step="0.01" value="2.5" />
+        </div>
+
+        <div class="form-group">
+            <label for="portfolio_value_now">Valeur Totale du Portefeuille</label>
+            <input id="portfolio_value_now" type="number" step="100" value="10000" />
+        </div>
+
+        <div class="form-group">
+            <label for="cash_amount">Cash / Liquidité (Non investi)</label>
+            <input id="cash_amount" type="number" step="100" value="0" />
+            <div class="helper-text">Investissement net = Valeur - Cash</div>
+        </div>
+
+        <div class="form-group">
+            <label for="horizon_years">Horizon de projection (années)</label>
+            <input id="horizon_years" type="number" step="0.25" value="1" />
+        </div>
+
+        <div class="form-group">
+            <label for="n_paths">Simulations Monte Carlo</label>
+            <input id="n_paths" type="number" step="1000" value="100000" />
+        </div>
+
+        <button id="runBtn" onclick="runOptimization()">Lancer l'optimisation</button>
+        <div id="status" class="status"></div>
+    </div>
+
+    <div class="main">
+        <div class="stats-grid">
+            <div class="card">
+                <div class="card-title">Taux sans risque</div>
+                <div class="card-value" id="rf_value">–</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Rendement (Max Sharpe)</div>
+                <div class="card-value" id="ret_value">–</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Volatilité annualisée</div>
+                <div class="card-value" id="vol_value">–</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Ratio de Sharpe</div>
+                <div class="card-value" id="sharpe_value">–</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Nombre d'actifs</div>
+                <div class="card-value" id="asset_count">–</div>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="section">
+                <div class="section-title">Frontière Efficiente</div>
+                <div class="chart-container">
+                    <canvas id="efficientChart"></canvas>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Distribution MC (Valeur Finale Totale)</div>
+                <div class="chart-container">
+                    <canvas id="mcHistogram"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid-2" style="margin-top: 16px;">
+            <div class="section" style="margin-top:0;">
+                <div class="section-title">Performance Historique (Base 100)</div>
+                <div class="chart-container">
+                    <canvas id="base100Chart"></canvas>
+                </div>
+            </div>
+            <div class="section" style="margin-top:0;">
+                <div class="section-title">Rendements Logarithmiques (Volatilité)</div>
+                <div class="chart-container">
+                    <canvas id="logRetChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Allocation Optimale & Montants</div>
+            <table id="weights_table">
+                <thead>
+                    <tr>
+                        <th>Actif</th>
+                        <th>Poids (%)</th>
+                        <th>Montant à Investir</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Contribution au Risque</div>
+            <table id="risk_table">
+                <thead>
+                    <tr>
+                        <th>Actif</th>
+                        <th>Poids</th>
+                        <th>Contribution au risque</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Simulation Monte Carlo (Portefeuille Total)</div>
+            <table id="mc_table">
+                <thead>
+                    <tr>
+                        <th>Statistique</th>
+                        <th>Valeur</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Analyses de Risque Approfondies (Basé sur l'historique)</div>
+            <div class="risk-grid">
+                <div class="card" style="background:#0f172a; border-color:#334155;">
+                    <div class="card-title">Value at Risk (95% Daily)</div>
+                    <div class="card-value" id="var_value" style="color:#ef4444;">–</div>
+                    <div style="font-size:10px; color:#64748b;">Perte max journalière (confiance 95%)</div>
+                </div>
+                <div class="card" style="background:#0f172a; border-color:#334155;">
+                    <div class="card-title">Max Drawdown</div>
+                    <div class="card-value" id="dd_value" style="color:#ef4444;">–</div>
+                    <div style="font-size:10px; color:#64748b;">Pire baisse du sommet au creux</div>
+                </div>
+                <div class="card" style="background:#0f172a; border-color:#334155;">
+                    <div class="card-title">Ratio de Sortino</div>
+                    <div class="card-value" id="sortino_value" style="color:#f59e0b;">–</div>
+                    <div style="font-size:10px; color:#64748b;">Rendement / Volatilité à la baisse</div>
+                </div>
+                <div class="card" style="background:#0f172a; border-color:#334155;">
+                    <div class="card-title">Ratio de Calmar</div>
+                    <div class="card-value" id="calmar_value" style="color:#3b82f6;">–</div>
+                    <div style="font-size:10px; color:#64748b;">Rendement Annuel / Max Drawdown</div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="height: 40px;"></div>
+
+    </div>
+</div>
+
+<script>
+    let efficientChartInstance = null;
+    let mcHistogramInstance = null;
+    let base100ChartInstance = null;
+    let logRetChartInstance = null;
+
+    const COLORS = [
+        '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', 
+        '#ec4899', '#6366f1', '#14b8a6', '#f97316', '#06b6d4'
+    ];
+
+    async function runOptimization() {
+        const btn = document.getElementById("runBtn");
+        const statusDiv = document.getElementById("status");
+        statusDiv.className = "status";
+        statusDiv.textContent = "";
+
+        // Récupération des valeurs
+        const payload = {
+            tickers: document.getElementById("tickers").value,
+            period: document.getElementById("period").value,
+            geo: document.getElementById("geo").value,
+            rf_manual: parseFloat(document.getElementById("rf_manual").value),
+            portfolio_value_now: parseFloat(document.getElementById("portfolio_value_now").value),
+            cash: parseFloat(document.getElementById("cash_amount").value), 
+            horizon_years: parseFloat(document.getElementById("horizon_years").value),
+            n_paths: parseInt(document.getElementById("n_paths").value)
+        };
+
+        btn.disabled = true;
+        btn.textContent = "Calcul en cours...";
+
+        try {
+            const response = await fetch("http://localhost:5000/api/portfolio", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                statusDiv.className = "status error";
+                statusDiv.textContent = "Erreur: " + (errData.error || "Erreur inconnue");
+                return;
+            }
+
+            const data = await response.json();
+            if (data.error) {
+                statusDiv.className = "status error";
+                statusDiv.textContent = "Erreur: " + data.error;
+                return;
+            }
+
+            // --- MISE A JOUR UI TOP ---
+            document.getElementById("rf_value").textContent = (data.risk_free_rate * 100).toFixed(2) + " %";
+            document.getElementById("ret_value").textContent = (data.optimal_return * 100).toFixed(2) + " %";
+            document.getElementById("vol_value").textContent = (data.optimal_volatility * 100).toFixed(2) + " %";
+            document.getElementById("asset_count").textContent = data.tickers.length;
+            document.getElementById("sharpe_value").textContent = data.optimal_sharpe.toFixed(2);
+
+            // --- MISE A JOUR UI BOTTOM (Risk Metrics) ---
+            document.getElementById("var_value").textContent = (data.var_95 * 100).toFixed(2) + " %";
+            document.getElementById("dd_value").textContent = (data.max_drawdown * 100).toFixed(2) + " %";
+            document.getElementById("sortino_value").textContent = data.sortino_ratio.toFixed(2);
+            document.getElementById("calmar_value").textContent = data.calmar_ratio.toFixed(2);
+
+            // Allocation Table avec Montants
+            const wBody = document.querySelector("#weights_table tbody");
+            wBody.innerHTML = "";
+            const currencyFormatter = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD' }); 
+
+            data.best_weights.forEach(w => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${w.asset}</td>
+                    <td style="color: #3b82f6; font-weight:bold;">${(w.weight * 100).toFixed(2)} %</td>
+                    <td style="font-family: monospace;">${currencyFormatter.format(w.amount)}</td>
+                `;
+                wBody.appendChild(tr);
+            });
+
+            // Ligne Cash si > 0
+            if (data.cash > 0) {
+                const trCash = document.createElement("tr");
+                trCash.innerHTML = `
+                    <td style="color: #9ca3af; font-style: italic;">Liquidité (Cash)</td>
+                    <td style="color: #9ca3af;">-</td>
+                    <td style="color: #9ca3af; font-family: monospace;">${currencyFormatter.format(data.cash)}</td>
+                `;
+                wBody.appendChild(trCash);
+            }
+
+            // Risk Table
+            const rBody = document.querySelector("#risk_table tbody");
+            rBody.innerHTML = "";
+            data.risk_contrib.forEach(r => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${r.asset}</td>
+                    <td>${(r.weight * 100).toFixed(2)} %</td>
+                    <td>${(r.risk_contribution * 100).toFixed(2)} %</td>
+                `;
+                rBody.appendChild(tr);
+            });
+
+            // MC Stats Table
+            const mBody = document.querySelector("#mc_table tbody");
+            mBody.innerHTML = "";
+            if (data.mc_stats && data.mc_stats.expected_final !== null) {
+                mBody.innerHTML = `
+                    <tr><td>Valeur finale attendue (Moyenne)</td><td>${currencyFormatter.format(data.mc_stats.expected_final)}</td></tr>
+                    <tr><td>Valeur finale médiane</td><td>${currencyFormatter.format(data.mc_stats.median_final)}</td></tr>
+                    <tr><td>Scénario défavorable (5%)</td><td style="color:#ef4444;">${currencyFormatter.format(data.mc_stats.pct5)}</td></tr>
+                    <tr><td>Scénario favorable (95%)</td><td style="color:#10b981;">${currencyFormatter.format(data.mc_stats.pct95)}</td></tr>
+                `;
+            } else {
+                mBody.innerHTML = `<tr><td colspan="2">Monte Carlo non disponible.</td></tr>`;
+            }
+
+            // Dessin des Graphes
+            drawEfficientFrontier(data);
+            drawMCHistogram(data);
+            if (data.history) {
+                drawBase100Chart(data.history, data.tickers);
+                drawLogReturnsChart(data.history, data.tickers);
+            }
+
+            statusDiv.className = "status success";
+            statusDiv.textContent = "Calcul terminé avec succès.";
+        } catch (e) {
+            console.error(e);
+            statusDiv.className = "status error";
+            statusDiv.textContent = "Erreur réseau: " + e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = "Lancer l'optimisation";
+        }
+    }
+
+    // --- CHART FUNCTIONS ---
+
+    function drawEfficientFrontier(data) {
+        const ctx = document.getElementById("efficientChart").getContext("2d");
+        const efficient = data.efficient_frontier;
+        
+        if (efficientChartInstance) efficientChartInstance.destroy();
+
+        efficientChartInstance = new Chart(ctx, {
+            type: "scatter",
+            data: {
+                datasets: [
+                    {
+                        label: "Simulations",
+                        data: efficient.map(e => ({ x: (e.Volatility * 100).toFixed(2), y: (e.Return * 100).toFixed(2) })),
+                        backgroundColor: efficient.map(e => e.Sharpe > 1 ? "rgba(34, 197, 94, 0.6)" : (e.Sharpe > 0.5 ? "rgba(59, 130, 246, 0.6)" : "rgba(107, 114, 128, 0.4)")),
+                        pointRadius: 2
+                    },
+                    {
+                        label: "Max Sharpe",
+                        data: [{ x: (data.optimal_volatility * 100).toFixed(2), y: (data.optimal_return * 100).toFixed(2) }],
+                        backgroundColor: "rgba(239, 68, 68, 1)",
+                        pointRadius: 8,
+                        pointStyle: "star"
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { title: { display: true, text: "Volatilité (%)", color: "#d1d5db" }, ticks: { color: "#9ca3af" }, grid: { color: "rgba(31, 41, 51, 0.2)" } },
+                    y: { title: { display: true, text: "Rendement (%)", color: "#d1d5db" }, ticks: { color: "#9ca3af" }, grid: { color: "rgba(31, 41, 51, 0.2)" } }
+                },
+                plugins: { legend: { labels: { color: "#9ca3af" } } }
+            }
+        });
+    }
+
+    function drawMCHistogram(data) {
+        if (!data.mc_histogram) return;
+        const ctx = document.getElementById("mcHistogram").getContext("2d");
+        const hist = data.mc_histogram;
+        const binLabels = hist.bins.slice(0, -1).map(b => parseFloat(b).toFixed(0));
+
+        if (mcHistogramInstance) mcHistogramInstance.destroy();
+
+        mcHistogramInstance = new Chart(ctx, {
+            type: "bar",
+            data: {
+                labels: binLabels,
+                datasets: [{
+                    label: "Fréquence",
+                    data: hist.values,
+                    backgroundColor: "rgba(59, 130, 246, 0.6)",
+                    borderColor: "rgba(37, 99, 235, 1)",
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { title: { display: true, text: "Valeur Totale Portefeuille", color: "#d1d5db" }, ticks: { color: "#9ca3af" }, grid: { display: false } },
+                    y: { display: false }
+                }
+            }
+        });
+    }
+
+    function drawBase100Chart(history, tickers) {
+        const ctx = document.getElementById("base100Chart").getContext("2d");
+        const datasets = tickers.map((ticker, index) => ({
+            label: ticker,
+            data: history.base100[ticker],
+            borderColor: COLORS[index % COLORS.length],
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.1
+        }));
+
+        if (base100ChartInstance) base100ChartInstance.destroy();
+
+        base100ChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: { labels: history.dates, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: "#9ca3af" } },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    x: { grid: { color: "rgba(31, 41, 51, 0.2)" }, ticks: { color: "#9ca3af", maxTicksLimit: 8 } },
+                    y: { grid: { color: "rgba(31, 41, 51, 0.2)" }, ticks: { color: "#9ca3af" }, title: { display: true, text: 'Base 100', color: '#6b7280' } }
+                }
+            }
+        });
+    }
+
+    function drawLogReturnsChart(history, tickers) {
+        const ctx = document.getElementById("logRetChart").getContext("2d");
+        const datasets = tickers.map((ticker, index) => ({
+            label: ticker,
+            data: history.log_returns[ticker],
+            borderColor: COLORS[index % COLORS.length],
+            backgroundColor: 'transparent',
+            borderWidth: 1,
+            pointRadius: 0,
+            tension: 0.1,
+            hidden: index > 0 
+        }));
+
+        if (logRetChartInstance) logRetChartInstance.destroy();
+
+        logRetChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: { labels: history.dates_returns, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                plugins: {
+                    legend: { 
+                        labels: { color: "#9ca3af" },
+                        onClick: function(e, legendItem, legend) {
+                            const index = legendItem.datasetIndex;
+                            const ci = legend.chart;
+                            if (ci.isDatasetVisible(index)) {
+                                ci.hide(index);
+                                legendItem.hidden = true;
+                            } else {
+                                ci.show(index);
+                                legendItem.hidden = false;
+                            }
+                        }
+                    },
+                    title: { display: true, text: 'Cliquez sur la légende pour comparer les actifs', color: '#4b5563', font: {size: 10} }
+                },
+                scales: {
+                    x: { grid: { color: "rgba(31, 41, 51, 0.2)" }, ticks: { color: "#9ca3af", maxTicksLimit: 8 } },
+                    y: { grid: { color: "rgba(31, 41, 51, 0.2)" }, ticks: { color: "#9ca3af" }, title: { display: true, text: 'Log Return', color: '#6b7280' } }
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>
