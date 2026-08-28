@@ -81,6 +81,12 @@
         </div>
 
         <div class="form-group">
+            <label for="engine">Moteur d'allocation</label>
+            <select id="engine"></select>
+            <div class="helper-text" id="engine_description"></div>
+        </div>
+
+        <div class="form-group">
             <label for="period">Période historique</label>
             <select id="period">
                 <option value="1y" selected>1 an</option>
@@ -137,7 +143,7 @@
                 <div class="card-value" id="rf_value">–</div>
             </div>
             <div class="card">
-                <div class="card-title">Rendement (Max Sharpe)</div>
+                <div class="card-title" id="ret_value_title">Rendement (portefeuille optimal)</div>
                 <div class="card-value" id="ret_value">–</div>
             </div>
             <div class="card">
@@ -185,7 +191,7 @@
         </div>
 
         <div class="section">
-            <div class="section-title">Allocation Optimale & Montants</div>
+            <div class="section-title" id="weights_section_title">Allocation Optimale & Montants</div>
             <table id="weights_table">
                 <thead>
                     <tr>
@@ -263,9 +269,55 @@
     let logRetChartInstance = null;
 
     const COLORS = [
-        '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', 
+        '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
         '#ec4899', '#6366f1', '#14b8a6', '#f97316', '#06b6d4'
     ];
+
+    let ENGINES = [];
+
+    async function loadEngines() {
+        const select = document.getElementById("engine");
+        try {
+            const response = await fetch("http://localhost:5000/api/engines");
+            ENGINES = await response.json();
+
+            const groups = {};
+            ENGINES.forEach(e => {
+                if (!groups[e.category]) groups[e.category] = [];
+                groups[e.category].push(e);
+            });
+
+            select.innerHTML = "";
+            Object.keys(groups).forEach(category => {
+                const optgroup = document.createElement("optgroup");
+                optgroup.label = category;
+                groups[category].forEach(e => {
+                    const opt = document.createElement("option");
+                    opt.value = e.id;
+                    opt.textContent = e.label;
+                    optgroup.appendChild(opt);
+                });
+                select.appendChild(optgroup);
+            });
+
+            select.value = "max_sharpe";
+            updateEngineDescription();
+        } catch (e) {
+            console.error("Impossible de charger les moteurs d'allocation:", e);
+            document.getElementById("engine_description").textContent = "Backend indisponible (moteurs non chargés).";
+        }
+    }
+
+    function updateEngineDescription() {
+        const select = document.getElementById("engine");
+        const selected = ENGINES.find(e => e.id === select.value);
+        document.getElementById("engine_description").textContent = selected ? selected.description : "";
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        loadEngines();
+        document.getElementById("engine").addEventListener("change", updateEngineDescription);
+    });
 
     async function runOptimization() {
         const btn = document.getElementById("runBtn");
@@ -276,6 +328,7 @@
         // Récupération des valeurs
         const payload = {
             tickers: document.getElementById("tickers").value,
+            engine: document.getElementById("engine").value,
             period: document.getElementById("period").value,
             geo: document.getElementById("geo").value,
             rf_manual: parseFloat(document.getElementById("rf_manual").value),
@@ -311,10 +364,12 @@
 
             // --- MISE A JOUR UI TOP ---
             document.getElementById("rf_value").textContent = (data.risk_free_rate * 100).toFixed(2) + " %";
+            document.getElementById("ret_value_title").textContent = "Rendement (" + data.engine_label + ")";
             document.getElementById("ret_value").textContent = (data.optimal_return * 100).toFixed(2) + " %";
             document.getElementById("vol_value").textContent = (data.optimal_volatility * 100).toFixed(2) + " %";
             document.getElementById("asset_count").textContent = data.tickers.length;
             document.getElementById("sharpe_value").textContent = data.optimal_sharpe.toFixed(2);
+            document.getElementById("weights_section_title").textContent = "Allocation Optimale & Montants — " + data.engine_label;
 
             // --- MISE A JOUR UI BOTTOM (Risk Metrics) ---
             document.getElementById("var_value").textContent = (data.var_95 * 100).toFixed(2) + " %";
@@ -414,7 +469,7 @@
                         pointRadius: 2
                     },
                     {
-                        label: "Max Sharpe",
+                        label: data.engine_label,
                         data: [{ x: (data.optimal_volatility * 100).toFixed(2), y: (data.optimal_return * 100).toFixed(2) }],
                         backgroundColor: "rgba(239, 68, 68, 1)",
                         pointRadius: 8,
